@@ -426,4 +426,4 @@ async def unban_process(message: types.Message, state: FSMContext):
         await message.answer(f"✅ Foydalanuvchi {user_id} bandan olindi!")
     except:
         await message.answer("❌ Xatolik! ID noto'g'ri.")
-    await state.clear() 
+    await state.clear()
