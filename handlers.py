@@ -21,12 +21,18 @@ class Form(StatesGroup):
     waiting_for_admin_reply = State()
     waiting_for_search_id = State()
 
-# XAVFSIZ TIL OLISH FUNKSIYASI (Takrorlanmaslik uchun)
+# --- YORDAMCHI FUNKSIYALAR ---
+
+# XAVFSIZ TIL OLISH (sqlite3.Row uchun moslashtirilgan)
 def get_safe_lang(user_data):
     if not user_data:
         return 'uz'
-    # Agar til bo'sh yoki None bo'lsa, standart sifatida 'uz' qaytaradi
-    return user_data.get('language') or 'uz'
+    return user_data['language'] or 'uz'
+
+# XAVFSIZ SANA OLISH
+def safe_date(date_obj):
+    if not date_obj: return "Noma'lum"
+    return str(date_obj).split('.')[0]
 
 # ----------- /START ------------
 @router.message(CommandStart())
@@ -42,14 +48,14 @@ async def cmd_start(message: types.Message, state: FSMContext):
     user_data = await db.get_user(user.id)
     
     # 1. BAN TEKSHIRISH
-    if user_data and user_data.get('is_banned') == 1:
+    if user_data and user_data['is_banned'] == 1:
         await message.answer("⛔ Siz bloklangansiz!", reply_markup=types.ReplyKeyboardRemove())
         return
 
     # 2. TIL TEKSHIRISH
     lang = get_safe_lang(user_data)
     
-    if not user_data or not user_data.get('language'):
+    if not user_data or not user_data['language']:
         await message.answer(
             "🇺🇿 Assalomu alaykum! Iltimos, tilni tanlang.\n\n"
             "🇷🇺 Здравствуйте! Пожалуйста, выберите язык.",
@@ -117,7 +123,7 @@ async def start_contact(message: types.Message, state: FSMContext):
     user_data = await db.get_user(message.from_user.id)
     lang = get_safe_lang(user_data)
     
-    if user_data and user_data.get('is_banned') == 1:
+    if user_data and user_data['is_banned'] == 1:
         await message.answer("⛔ Siz bloklangansiz!", reply_markup=types.ReplyKeyboardRemove())
         return
 
@@ -156,7 +162,6 @@ async def process_message(message: types.Message, state: FSMContext, bot: Bot):
         confirmation = "✅ Sizning murojaatingiz yuborildi!" if lang == 'uz' else "✅ Ваше обращение отправлено!"
         await message.answer(confirmation, reply_markup=kb.main_menu_keyboard(lang))
     except Exception as e:
-        # MUHIM: Xatolikni terminalga chiqaramiz, shunda nima sababdan ishlamayotganini bilamiz
         print(f"❌ Murojaat yuborishda XATOLIK: {e}")
         await message.answer("❌ Xatolik yuz berdi." if lang == 'uz' else "❌ Произошла ошибка.", reply_markup=kb.main_menu_keyboard(lang))
     finally:
@@ -220,11 +225,6 @@ async def admin_users_list(callback: types.CallbackQuery):
     text = f"👥 <b>Foydalanuvchilar</b> (Sahifa {page}/{total_pages})"
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.admin_user_list_keyboard(users, page, total_pages))
     await callback.answer()
-
-# --- XAVFSIZ SANANI AJRATISH FUNKSIYASI ---
-def safe_date(date_obj):
-    if not date_obj: return "Noma'lum"
-    return str(date_obj).split('.')[0]
 
 # --- ID ORQALI QIDIRISH ---
 @router.callback_query(F.data == "admin_search", IsAdmin())
@@ -426,4 +426,4 @@ async def unban_process(message: types.Message, state: FSMContext):
         await message.answer(f"✅ Foydalanuvchi {user_id} bandan olindi!")
     except:
         await message.answer("❌ Xatolik! ID noto'g'ri.")
-    await state.clear()
+    await state.clear() 

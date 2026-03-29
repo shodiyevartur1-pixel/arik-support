@@ -9,6 +9,7 @@ from database import db  # <-- BU YERNI O'ZGARTIRDIM
 from handlers import router
 from middlewares import AntiSpamMiddleware
 
+
 # Logging sozlamalari
 logging.basicConfig(level=logging.INFO)
 

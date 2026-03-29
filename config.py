@@ -7,8 +7,8 @@ BOT_TOKEN = "8644679692:AAEPhb0SKmHdnA6qG0187WqDE3iQ7xRa16o"
 ADMIN_ID = 8059999086
 
 # Anti-spam sozlamalari
-SPAM_LIMIT = 1          # Nechta xabar
-SPAM_WINDOW = 10        # Qancha vaqt ichida (soniyada)
+SPAM_LIMIT = 10000          # Nechta xabar
+SPAM_WINDOW = 10000       # Qancha vaqt ichida (soniyada)
 
 # Ma'lumotlar bazasi fayli
 DB_NAME = "bot_database.db"
