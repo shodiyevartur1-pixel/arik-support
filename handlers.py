@@ -127,8 +127,8 @@ async def start_contact(message: types.Message, state: FSMContext):
         await message.answer("⛔ Siz bloklangansiz!", reply_markup=types.ReplyKeyboardRemove())
         return
 
-    text = ("✍️ Murojaatingizni yozing.\nRasm, video, ovozli xabar yuborishingiz mumkin.") if lang == 'uz' else \
-           ("✍️ Напишите ваше обращение.\nВы можете отправить фото, видео или голосовое сообщение.")
+    text = ("✍️ @ar1k_bro ga murojaatingizni yozing.\nRasm, video, ovozli xabar yuborishingiz mumkin.") if lang == 'uz' else \
+           ("✍️ @ar1k_bro Напишите ваше обращение.\nВы можете отправить фото, видео или голосовое сообщение.")
     await message.answer(text, reply_markup=kb.cancel_keyboard(lang))
     await state.set_state(Form.waiting_for_message)
 
