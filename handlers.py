@@ -21,32 +21,41 @@ class Form(StatesGroup):
     waiting_for_admin_reply = State()
     waiting_for_search_id = State()
 
+# XAVFSIZ TIL OLISH FUNKSIYASI (Takrorlanmaslik uchun)
+def get_safe_lang(user_data):
+    if not user_data:
+        return 'uz'
+    # Agar til bo'sh yoki None bo'lsa, standart sifatida 'uz' qaytaradi
+    return user_data.get('language') or 'uz'
+
 # ----------- /START ------------
 @router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     user = message.from_user
-    await db.add_user(user.id, user.username, user.full_name)
+    
+    try:
+        await db.add_user(user.id, user.username, user.full_name)
+    except Exception as e:
+        print(f"Xatolik (Foydalanuvchi qo'shishda): {e}")
     
     user_data = await db.get_user(user.id)
     
     # 1. BAN TEKSHIRISH
-    if user_data and user_data['is_banned'] == 1:
-        # Menyuni olib tashlash uchun ReplyKeyboardRemove ishlatamiz
+    if user_data and user_data.get('is_banned') == 1:
         await message.answer("⛔ Siz bloklangansiz!", reply_markup=types.ReplyKeyboardRemove())
         return
 
     # 2. TIL TEKSHIRISH
-    # Agar bazada til yo'q bo'lsa (None), til so'raymiz
-    if not user_data or not user_data['language']:
+    lang = get_safe_lang(user_data)
+    
+    if not user_data or not user_data.get('language'):
         await message.answer(
             "🇺🇿 Assalomu alaykum! Iltimos, tilni tanlang.\n\n"
             "🇷🇺 Здравствуйте! Пожалуйста, выберите язык.",
             reply_markup=kb.language_keyboard()
         )
     else:
-        # Til tanlangan bo'lsa, darhol menyuga o'tamiz
-        lang = user_data['language']
         text = (f"Xush kelibsiz, {user.full_name}! 👋\n"
                 f"Ushbu bot orqali siz @ar1k_bro ga murojaat qilishingiz mumkin.") if lang == 'uz' else \
                (f"Добро пожаловать, {user.full_name}! 👋\n"
@@ -69,7 +78,7 @@ async def set_language(callback: types.CallbackQuery):
     try:
         await callback.message.edit_text(text)
     except:
-        pass # Agar xabar o'zgarmasa ham davom etadi
+        pass
     
     await callback.message.answer("🏠 Bosh menyu:", reply_markup=kb.main_menu_keyboard(lang))
     await callback.answer()
@@ -78,7 +87,7 @@ async def set_language(callback: types.CallbackQuery):
 @router.message(F.text == "⚙️ Настройки")
 async def settings(message: types.Message):
     user_data = await db.get_user(message.from_user.id)
-    lang = user_data['language'] if user_data else 'uz'
+    lang = get_safe_lang(user_data)
     text = "⚙️ Sozlamalar bo'limi" if lang == 'uz' else "⚙️ Раздел настроек"
     await message.answer(text, reply_markup=kb.settings_keyboard(lang))
 
@@ -92,7 +101,7 @@ async def change_language(callback: types.CallbackQuery):
 @router.message(F.text == "ℹ️ О боте")
 async def about_bot(message: types.Message):
     user_data = await db.get_user(message.from_user.id)
-    lang = user_data['language'] if user_data else 'uz'
+    lang = get_safe_lang(user_data)
     text = ("🤖 <b>Bot haqida</b>\n\n"
             "Bu bot orqali siz @ar1k_bro ga to'g'ridan-to'g'ri murojaat yo'llashingiz mumkin.\n\n"
             "📦 Versiya: 2.0 (Kuchaytirilgan)\n👨‍💻 Dasturchi: @ar1k_bro") if lang == 'uz' else \
@@ -106,10 +115,9 @@ async def about_bot(message: types.Message):
 @router.message(F.text == "📩 Отправить обращение")
 async def start_contact(message: types.Message, state: FSMContext):
     user_data = await db.get_user(message.from_user.id)
-    lang = user_data['language'] if user_data else 'uz'
+    lang = get_safe_lang(user_data)
     
-    # Ban tekshirish (qo'shimcha xavfsizlik)
-    if user_data and user_data['is_banned'] == 1:
+    if user_data and user_data.get('is_banned') == 1:
         await message.answer("⛔ Siz bloklangansiz!", reply_markup=types.ReplyKeyboardRemove())
         return
 
@@ -122,7 +130,7 @@ async def start_contact(message: types.Message, state: FSMContext):
 async def process_message(message: types.Message, state: FSMContext, bot: Bot):
     user_id = message.from_user.id
     user_data = await db.get_user(user_id)
-    lang = user_data['language'] if user_data else 'uz'
+    lang = get_safe_lang(user_data)
     
     if message.text in ["❌ Bekor qilish", "❌ Отмена"]:
         await state.clear()
@@ -148,15 +156,18 @@ async def process_message(message: types.Message, state: FSMContext, bot: Bot):
         confirmation = "✅ Sizning murojaatingiz yuborildi!" if lang == 'uz' else "✅ Ваше обращение отправлено!"
         await message.answer(confirmation, reply_markup=kb.main_menu_keyboard(lang))
     except Exception as e:
+        # MUHIM: Xatolikni terminalga chiqaramiz, shunda nima sababdan ishlamayotganini bilamiz
+        print(f"❌ Murojaat yuborishda XATOLIK: {e}")
         await message.answer("❌ Xatolik yuz berdi." if lang == 'uz' else "❌ Произошла ошибка.", reply_markup=kb.main_menu_keyboard(lang))
-    await state.clear()
+    finally:
+        await state.clear()
 
 # ----------- Mening murojaatlarim ------------
 @router.message(F.text == "📋 Mening murojaatlarim")
 @router.message(F.text == "📋 Мои обращения")
 async def my_appeals(message: types.Message):
     user_data = await db.get_user(message.from_user.id)
-    lang = user_data['language'] if user_data else 'uz'
+    lang = get_safe_lang(user_data)
     
     msg_count = await db.count_user_messages(message.from_user.id)
     
@@ -179,7 +190,7 @@ async def admin_back(callback: types.CallbackQuery):
     await callback.message.edit_text("🔐 <b>Admin Panel (Pro)</b>", parse_mode="HTML", reply_markup=kb.admin_keyboard())
     await callback.answer()
 
-# --- STATISTIKA (KENGAYTIRILGAN) ---
+# --- STATISTIKA ---
 @router.callback_query(F.data == "admin_stats", IsAdmin())
 async def admin_stats(callback: types.CallbackQuery):
     total_users, total_msgs, active_users = await db.get_stats()
@@ -190,7 +201,7 @@ async def admin_stats(callback: types.CallbackQuery):
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.admin_keyboard())
     await callback.answer()
 
-# --- FOYDALANUVCHILAR RO'YXATI (SAHIFALASH BILAN) ---
+# --- FOYDALANUVCHILAR RO'YXATI ---
 @router.callback_query(F.data.startswith("admin_users_"), IsAdmin())
 async def admin_users_list(callback: types.CallbackQuery):
     page = int(callback.data.split("_")[2])
@@ -210,6 +221,11 @@ async def admin_users_list(callback: types.CallbackQuery):
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.admin_user_list_keyboard(users, page, total_pages))
     await callback.answer()
 
+# --- XAVFSIZ SANANI AJRATISH FUNKSIYASI ---
+def safe_date(date_obj):
+    if not date_obj: return "Noma'lum"
+    return str(date_obj).split('.')[0]
+
 # --- ID ORQALI QIDIRISH ---
 @router.callback_query(F.data == "admin_search", IsAdmin())
 async def admin_search_start(callback: types.CallbackQuery, state: FSMContext):
@@ -224,16 +240,14 @@ async def admin_search_process(message: types.Message, state: FSMContext):
         user_data = await db.get_user(user_id)
         if user_data:
             msg_count = await db.count_user_messages(user_id)
-            reg_date = user_data['created_at'].split('.')[0] if user_data['created_at'] else "Noma'lum"
-            last_seen = user_data['last_activity'].split('.')[0] if user_data['last_activity'] else "Noma'lum"
             status = "🚫 Banlangan" if user_data['is_banned'] else "✅ Faol"
             
             text = (f"👤 <b>Foydalanuvchi topildi:</b>\n\n"
                     f"🆔 ID: <code>{user_data['user_id']}</code>\n"
                     f"👤 Ism: {user_data['full_name']}\n"
                     f"🌐 Til: {user_data['language']}\n"
-                    f"📅 Qo'shilgan: {reg_date}\n"
-                    f"⏱ So'nggi faollik: {last_seen}\n"
+                    f"📅 Qo'shilgan: {safe_date(user_data['created_at'])}\n"
+                    f"⏱ So'nggi faollik: {safe_date(user_data['last_activity'])}\n"
                     f"📊 Xabarlar: {msg_count} ta\n"
                     f"📈 Status: {status}")
             
@@ -255,15 +269,13 @@ async def admin_view_user(callback: types.CallbackQuery):
         return
 
     msg_count = await db.count_user_messages(user_id)
-    reg_date = user_data['created_at'].split('.')[0] if user_data['created_at'] else "Noma'lum"
-    last_seen = user_data['last_activity'].split('.')[0] if user_data['last_activity'] else "Noma'lum"
     status = "🚫 Banlangan" if user_data['is_banned'] else "✅ Faol"
     
     text = (f"👤 <b>Foydalanuvchi profili:</b>\n\n"
             f"🆔 ID: <code>{user_data['user_id']}</code>\n"
             f"👤 Ism: {user_data['full_name']}\n"
-            f"📅 Qo'shilgan: {reg_date}\n"
-            f"⏱ So'nggi faollik: {last_seen}\n"
+            f"📅 Qo'shilgan: {safe_date(user_data['created_at'])}\n"
+            f"⏱ So'nggi faollik: {safe_date(user_data['last_activity'])}\n"
             f"📊 Xabarlar: {msg_count} ta\n"
             f"📈 Status: {status}")
     
@@ -286,18 +298,15 @@ async def admin_toggle_ban(callback: types.CallbackQuery):
     status_text = "✅ Bandan olindi" if new_status == 0 else "🚫 Ban qilindi"
     await callback.answer(f"Foydalanuvchi {status_text}!", show_alert=True)
     
-    # Yangilangan profilni qayta chiqarish
     user_data_new = await db.get_user(user_id)
     msg_count = await db.count_user_messages(user_id)
-    reg_date = user_data_new['created_at'].split('.')[0] if user_data_new['created_at'] else "Noma'lum"
-    last_seen = user_data_new['last_activity'].split('.')[0] if user_data_new['last_activity'] else "Noma'lum"
     status = "🚫 Banlangan" if user_data_new['is_banned'] else "✅ Faol"
     
     text = (f"👤 <b>Foydalanuvchi profili:</b>\n\n"
             f"🆔 ID: <code>{user_data_new['user_id']}</code>\n"
             f"👤 Ism: {user_data_new['full_name']}\n"
-            f"📅 Qo'shilgan: {reg_date}\n"
-            f"⏱ So'nggi faollik: {last_seen}\n"
+            f"📅 Qo'shilgan: {safe_date(user_data_new['created_at'])}\n"
+            f"⏱ So'nggi faollik: {safe_date(user_data_new['last_activity'])}\n"
             f"📊 Xabarlar: {msg_count} ta\n"
             f"📈 Status: {status}")
     
@@ -324,7 +333,7 @@ async def admin_reply_send(message: types.Message, state: FSMContext, bot: Bot):
         await message.answer(f"❌ Xatolik: {e}")
     await state.clear()
 
-# --- BROADCAST (TASDIQLASH BILAN) ---
+# --- BROADCAST ---
 @router.callback_query(F.data == "admin_broadcast", IsAdmin())
 async def broadcast_start(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text("📢 Barcha foydalanuvchilarga yuboriladigan xabarni kiriting:")
@@ -376,7 +385,7 @@ async def broadcast_cancel(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text("❌ Xabar tarqatish bekor qilindi.")
     await state.clear()
 
-# --- BAN MENU (QO'SHIMCHA) ---
+# --- BAN MENU ---
 @router.callback_query(F.data == "admin_ban_menu", IsAdmin())
 async def ban_menu(callback: types.CallbackQuery):
     buttons = [
