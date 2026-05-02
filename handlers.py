@@ -52,12 +52,10 @@ async def cmd_start(message: types.Message, state: FSMContext):
     
     user_data = await db.get_user(user.id)
     
-    # 1. BAN TEKSHIRISH
     if user_data and user_data['is_banned'] == 1:
         await message.answer("⛔ Siz bloklangansiz!", reply_markup=types.ReplyKeyboardRemove())
         return
 
-    # 2. TIL TEKSHIRISH
     lang = get_safe_lang(user_data)
     
     if not user_data or not user_data['language']:
@@ -155,7 +153,6 @@ async def process_message(message: types.Message, state: FSMContext, bot: Bot):
     elif message.video: content_type = "video"
     elif message.voice: content_type = "voice"
     
-    # --- BU YERDA O'ZGARISH BOR (BARCHA ADMINLARGA YUBORISH) ---
     admins = get_admin_ids()
     info_text = (f"👤 <b>Yangi murojaat!</b>\n"
                  f"🆔 ID: <code>{user_id}</code>\n"
@@ -165,21 +162,18 @@ async def process_message(message: types.Message, state: FSMContext, bot: Bot):
     success = False
     for admin_id in admins:
         try:
-            # Xabarni nusxalash
             await message.copy_to(admin_id)
-            # Info textni yuborish
             await bot.send_message(admin_id, info_text, parse_mode="HTML", reply_markup=kb.admin_reply_keyboard(user_id))
             success = True
         except Exception as e:
             print(f"❌ Admin {admin_id} ga yuborib bo'lmadi: {e}")
-            # Agar admin botni start bosmagan bo'lsa yoki bloklagan bo'lsa shu yerda xato chiqadi
     
     if success:
         await db.add_message(user_id, "to_admin", content_type)
         confirmation = "✅ Sizning murojaatingiz yuborildi!" if lang == 'uz' else "✅ Ваше обращение отправлено!"
         await message.answer(confirmation, reply_markup=kb.main_menu_keyboard(lang))
     else:
-        await message.answer("❌ Xatolik yuz berdi. Adminlar topilmadi." if lang == 'uz' else "❌ Ошибка. Админы не найдены.", reply_markup=kb.main_menu_keyboard(lang))
+        await message.answer("❌ Xatolik yuz berdi." if lang == 'uz' else "❌ Произошла ошибка.", reply_markup=kb.main_menu_keyboard(lang))
         
     await state.clear()
 
@@ -189,17 +183,13 @@ async def process_message(message: types.Message, state: FSMContext, bot: Bot):
 async def my_appeals(message: types.Message):
     user_data = await db.get_user(message.from_user.id)
     lang = get_safe_lang(user_data)
-    
     msg_count = await db.count_user_messages(message.from_user.id)
-    
-    text = (f"📊 Sizning statistikangiz:\n"
-            f"📝 Yuborilgan xabarlar: {msg_count} ta") if lang == 'uz' else \
-           (f"📊 Ваша статистика:\n"
-            f"📝 Отправленных сообщений: {msg_count}")
+    text = (f"📊 Sizning statistikangiz:\n📝 Yuborilgan xabarlar: {msg_count} ta") if lang == 'uz' else \
+           (f"📊 Ваша статистика:\n📝 Отправленных сообщений: {msg_count}")
     await message.answer(text)
 
 # =============================================
-#             ADMIN PANEL (PRO LEVEL)
+#             ADMIN PANEL
 # =============================================
 
 @router.message(Command("admin"), IsAdmin())
@@ -211,38 +201,28 @@ async def admin_back(callback: types.CallbackQuery):
     await callback.message.edit_text("🔐 <b>Admin Panel (Pro)</b>", parse_mode="HTML", reply_markup=kb.admin_keyboard())
     await callback.answer()
 
-# --- STATISTIKA ---
 @router.callback_query(F.data == "admin_stats", IsAdmin())
 async def admin_stats(callback: types.CallbackQuery):
     total_users, total_msgs, active_users = await db.get_stats()
-    text = (f"📊 <b>Batafsil Statistika</b>\n\n"
-            f"👥 Jami foydalanuvchilar: {total_users}\n"
-            f"🟢 Faol (24 soat): {active_users}\n"
-            f"📝 Jami xabarlar: {total_msgs}")
+    text = (f"📊 <b>Batafsil Statistika</b>\n\n👥 Jami foydalanuvchilar: {total_users}\n🟢 Faol: {active_users}\n📝 Xabarlar: {total_msgs}")
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.admin_keyboard())
     await callback.answer()
 
-# --- FOYDALANUVCHILAR RO'YXATI ---
 @router.callback_query(F.data.startswith("admin_users_"), IsAdmin())
 async def admin_users_list(callback: types.CallbackQuery):
     page = int(callback.data.split("_")[2])
     limit = 5
     offset = (page - 1) * limit
-    
     total_users = await db.get_users_count()
     total_pages = (total_users + limit - 1) // limit
-    
     users = await db.get_users_page(limit, offset)
-    
     if not users and page != 1:
         await callback.answer("Boshqa sahifa yo'q!", show_alert=True)
         return
-
     text = f"👥 <b>Foydalanuvchilar</b> (Sahifa {page}/{total_pages})"
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.admin_user_list_keyboard(users, page, total_pages))
     await callback.answer()
 
-# --- ID ORQALI QIDIRISH ---
 @router.callback_query(F.data == "admin_search", IsAdmin())
 async def admin_search_start(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text("🔍 Foydalanuvchi ID sini kiriting:")
@@ -257,16 +237,7 @@ async def admin_search_process(message: types.Message, state: FSMContext):
         if user_data:
             msg_count = await db.count_user_messages(user_id)
             status = "🚫 Banlangan" if user_data['is_banned'] else "✅ Faol"
-            
-            text = (f"👤 <b>Foydalanuvchi topildi:</b>\n\n"
-                    f"🆔 ID: <code>{user_data['user_id']}</code>\n"
-                    f"👤 Ism: {user_data['full_name']}\n"
-                    f"🌐 Til: {user_data['language']}\n"
-                    f"📅 Qo'shilgan: {safe_date(user_data['created_at'])}\n"
-                    f"⏱ So'nggi faollik: {safe_date(user_data['last_activity'])}\n"
-                    f"📊 Xabarlar: {msg_count} ta\n"
-                    f"📈 Status: {status}")
-            
+            text = (f"👤 <b>Foydalanuvchi topildi:</b>\n\n🆔 ID: <code>{user_data['user_id']}</code>\n👤 Ism: {user_data['full_name']}\n📈 Status: {status}")
             await message.answer(text, parse_mode="HTML", reply_markup=kb.admin_user_profile_keyboard(user_id, user_data['is_banned']))
         else:
             await message.answer("❌ Bunday ID li foydalanuvchi topilmadi.")
@@ -274,64 +245,38 @@ async def admin_search_process(message: types.Message, state: FSMContext):
         await message.answer("❌ ID faqat raqamlardan iborat bo'lishi kerak!")
     await state.clear()
 
-# --- PROFILNI KO'RISH ---
 @router.callback_query(F.data.startswith("view_user_"), IsAdmin())
 async def admin_view_user(callback: types.CallbackQuery):
     user_id = int(callback.data.split("_")[2])
     user_data = await db.get_user(user_id)
-    
     if not user_data:
         await callback.answer("Foydalanuvchi topilmadi!", show_alert=True)
         return
-
-    msg_count = await db.count_user_messages(user_id)
     status = "🚫 Banlangan" if user_data['is_banned'] else "✅ Faol"
-    
-    text = (f"👤 <b>Foydalanuvchi profili:</b>\n\n"
-            f"🆔 ID: <code>{user_data['user_id']}</code>\n"
-            f"👤 Ism: {user_data['full_name']}\n"
-            f"📅 Qo'shilgan: {safe_date(user_data['created_at'])}\n"
-            f"⏱ So'nggi faollik: {safe_date(user_data['last_activity'])}\n"
-            f"📊 Xabarlar: {msg_count} ta\n"
-            f"📈 Status: {status}")
-    
+    text = (f"👤 <b>Profil:</b>\n🆔 ID: <code>{user_data['user_id']}</code>\n👤 Ism: {user_data['full_name']}\n📈 Status: {status}")
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.admin_user_profile_keyboard(user_id, user_data['is_banned']))
     await callback.answer()
 
-# --- BAN/UNBAN TOGGLE ---
 @router.callback_query(F.data.startswith("toggle_ban_"), IsAdmin())
 async def admin_toggle_ban(callback: types.CallbackQuery):
     user_id = int(callback.data.split("_")[2])
     user_data = await db.get_user(user_id)
-    
     if not user_data:
         await callback.answer("Xatolik!", show_alert=True)
         return
-
     new_status = 0 if user_data['is_banned'] == 1 else 1
     await db.ban_user(user_id, new_status)
-    
     status_text = "✅ Bandan olindi" if new_status == 0 else "🚫 Ban qilindi"
     await callback.answer(f"Foydalanuvchi {status_text}!", show_alert=True)
-    
+    # Refresh page
     user_data_new = await db.get_user(user_id)
-    msg_count = await db.count_user_messages(user_id)
     status = "🚫 Banlangan" if user_data_new['is_banned'] else "✅ Faol"
-    
-    text = (f"👤 <b>Foydalanuvchi profili:</b>\n\n"
-            f"🆔 ID: <code>{user_data_new['user_id']}</code>\n"
-            f"👤 Ism: {user_data_new['full_name']}\n"
-            f"📅 Qo'shilgan: {safe_date(user_data_new['created_at'])}\n"
-            f"⏱ So'nggi faollik: {safe_date(user_data_new['last_activity'])}\n"
-            f"📊 Xabarlar: {msg_count} ta\n"
-            f"📈 Status: {status}")
-    
+    text = (f"👤 <b>Profil:</b>\n🆔 ID: <code>{user_data_new['user_id']}</code>\n📈 Status: {status}")
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.admin_user_profile_keyboard(user_id, user_data_new['is_banned']))
 
-# --- ADMIN JAVOB BERISH ---
+# --- ADMIN JAVOB BERISH (YANGILANGAN) ---
 @router.callback_query(F.data.startswith("reply_"))
 async def admin_reply_start(callback: types.CallbackQuery, state: FSMContext):
-    # Bu joyda IsAdmin filtri yo'q, lekin reply_ tugmasi faqat adminda chiqadi
     user_id = callback.data.split("_")[1]
     await state.update_data(target_user=int(user_id))
     await callback.message.answer("✍️ Javobingizni yozing:")
@@ -342,10 +287,28 @@ async def admin_reply_start(callback: types.CallbackQuery, state: FSMContext):
 async def admin_reply_send(message: types.Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
     target_user = data.get('target_user')
+    sender_id = message.from_user.id
+    
     try:
+        # 1. Foydalanuvchiga yuborish
         await message.copy_to(target_user)
-        await message.answer("✅ Xabar yuborildi!")
         await db.add_message(target_user, "from_admin", "reply")
+        
+        # 2. Boshqa adminlarga xabar berish (Suhbat tarixi uchun)
+        admins = get_admin_ids()
+        for admin_id in admins:
+            if admin_id != sender_id: # Javob yozgan admindan tashqari barchaga
+                try:
+                    # Xabarni adminlarga nusxalash
+                    await bot.copy_message(admin_id, message.chat.id, message.message_id)
+                    # Qisqacha izoh
+                    await bot.send_message(admin_id, f"↩️ Admin ({sender_id}) foydalanuvchi ({target_user}) ga javob berdi.")
+                except Exception as e:
+                    print(f"Admin {admin_id} ga javob nusxasi yuborilmadi: {e}")
+
+        # 3. Javob bergan adminga tasdiqlash
+        await message.answer("✅ Xabar yuborildi!")
+        
     except Exception as e:
         await message.answer(f"❌ Xatolik: {e}")
     await state.clear()
@@ -360,7 +323,6 @@ async def broadcast_start(callback: types.CallbackQuery, state: FSMContext):
 @router.message(Form.waiting_for_broadcast, IsAdmin())
 async def broadcast_preview(message: types.Message, state: FSMContext):
     await state.update_data(msg_id=message.message_id, chat_id=message.chat.id)
-    
     text = "📢 <b>Xabar tayyor!</b>\nQuyidagi xabar barchaga yuboriladi. Tasdiqlaysizmi?"
     await message.answer(text, parse_mode="HTML", reply_markup=kb.admin_broadcast_confirm_keyboard())
     await state.set_state(Form.waiting_for_broadcast_confirm)
