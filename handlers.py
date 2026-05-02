@@ -3,6 +3,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 import datetime
+import asyncio
 
 from config import ADMIN_ID
 from database import db
@@ -23,16 +24,20 @@ class Form(StatesGroup):
 
 # --- YORDAMCHI FUNKSIYALAR ---
 
-# XAVFSIZ TIL OLISH (sqlite3.Row uchun moslashtirilgan)
 def get_safe_lang(user_data):
     if not user_data:
         return 'uz'
     return user_data['language'] or 'uz'
 
-# XAVFSIZ SANA OLISH
 def safe_date(date_obj):
     if not date_obj: return "Noma'lum"
     return str(date_obj).split('.')[0]
+
+# Admin ID ni doim ro'yxatga aylantiruvchi funksiya
+def get_admin_ids():
+    if isinstance(ADMIN_ID, (list, tuple)):
+        return ADMIN_ID
+    return [ADMIN_ID]
 
 # ----------- /START ------------
 @router.message(CommandStart())
@@ -59,13 +64,12 @@ async def cmd_start(message: types.Message, state: FSMContext):
         await message.answer(
             "🇺🇿 Assalomu alaykum! Iltimos, tilni tanlang.\n\n"
             "🇷🇺 Здравствуйте! Пожалуйста, выберите язык.",
-            reply_markup=kb.language_keyboard()
-        )
+            reply_markup=kb.language_keyboard())
     else:
         text = (f"Xush kelibsiz, {user.full_name}! 👋\n"
-                f"Ushbu bot orqali siz @ar1k_bro ga murojaat qilishingiz mumkin.") if lang == 'uz' else \
+                f"Ushbu bot orqali siz Law adminiga murojaat qilishingiz mumkin.") if lang == 'uz' else \
                (f"Добро пожаловать, {user.full_name}! 👋\n"
-                f"Через этого бота вы можете обратиться к @ar1k_bro.")
+                f"Через этого бота вы можете обратиться к Law.")
         await message.answer(text, reply_markup=kb.main_menu_keyboard(lang))
 
 # ----------- Til va Sozlamalar ------------
@@ -76,10 +80,10 @@ async def set_language(callback: types.CallbackQuery):
     
     text = (f"✅ Til o'zgartirildi!\n\n"
             f"Xush kelibsiz, {callback.from_user.full_name}! 👋\n"
-            f"Ushbu bot orqali siz @ar1k_bro ga murojaat qilishingiz mumkin.") if lang == 'uz' else \
+            f"Ushbu bot orqali siz Law adminiga murojaat qilishingiz mumkin.") if lang == 'uz' else \
            (f"✅ Язык изменен!\n\n"
             f"Добро пожаловать, {callback.from_user.full_name}! 👋\n"
-            f"Через этого бота вы можете обратиться к @ar1k_bro.")
+            f"Через этого бота вы можете обратиться к Law.")
     
     try:
         await callback.message.edit_text(text)
@@ -109,11 +113,11 @@ async def about_bot(message: types.Message):
     user_data = await db.get_user(message.from_user.id)
     lang = get_safe_lang(user_data)
     text = ("🤖 <b>Bot haqida</b>\n\n"
-            "Bu bot orqali siz @ar1k_bro ga to'g'ridan-to'g'ri murojaat yo'llashingiz mumkin.\n\n"
-            "📦 Versiya: 2.0 (Kuchaytirilgan)\n👨‍💻 Dasturchi: @ar1k_bro") if lang == 'uz' else \
+            "Bu bot orqali siz Law adminiga to'g'ridan-to'g'ri murojaat yo'llashingiz mumkin.\n\n"
+            "📦 Versiya: 2.0 (Kuchaytirilgan)\n👨‍💻 Dasturchi: @budjet_uz") if lang == 'uz' else \
            ("🤖 <b>О боте</b>\n\n"
-            "Через этого бота вы можете отправить обращение @ar1k_bro.\n\n"
-            "📦 Версия: 2.0 (Усиленный)\n👨‍💻 Разработчик: @ar1k_bro")
+            "Через этого бота вы можете отправить обращение @Budjet_uz.\n\n"
+            "📦 Версия: 2.01 (Усиленный)\n👨‍💻 Разработчик: @Budjet_uz")
     await message.answer(text, parse_mode="HTML")
 
 # ----------- Murojaat yuborish ------------
@@ -127,8 +131,8 @@ async def start_contact(message: types.Message, state: FSMContext):
         await message.answer("⛔ Siz bloklangansiz!", reply_markup=types.ReplyKeyboardRemove())
         return
 
-    text = ("✍️ @ar1k_bro ga murojaatingizni yozing.\nRasm, video, ovozli xabar yuborishingiz mumkin.") if lang == 'uz' else \
-           ("✍️ @ar1k_bro Напишите ваше обращение.\nВы можете отправить фото, видео или голосовое сообщение.")
+    text = ("✍️ Law adminiga murojaatingizni yozing.\nRasm, video, ovozli xabar yuborishingiz mumkin.") if lang == 'uz' else \
+           ("✍️ Law Напишите ваше обращение.\nВы можете отправить фото, видео или голосовое сообщение.")
     await message.answer(text, reply_markup=kb.cancel_keyboard(lang))
     await state.set_state(Form.waiting_for_message)
 
@@ -151,21 +155,33 @@ async def process_message(message: types.Message, state: FSMContext, bot: Bot):
     elif message.video: content_type = "video"
     elif message.voice: content_type = "voice"
     
-    try:
-        await message.copy_to(ADMIN_ID)
-        info_text = (f"👤 <b>Yangi murojaat!</b>\n"
-                     f"🆔 ID: <code>{user_id}</code>\n"
-                     f"👤 User: {username}\n"
-                     f"📅 Vaqt: {time_str}")
-        await bot.send_message(ADMIN_ID, info_text, parse_mode="HTML", reply_markup=kb.admin_reply_keyboard(user_id))
+    # --- BU YERDA O'ZGARISH BOR (BARCHA ADMINLARGA YUBORISH) ---
+    admins = get_admin_ids()
+    info_text = (f"👤 <b>Yangi murojaat!</b>\n"
+                 f"🆔 ID: <code>{user_id}</code>\n"
+                 f"👤 User: {username}\n"
+                 f"📅 Vaqt: {time_str}")
+    
+    success = False
+    for admin_id in admins:
+        try:
+            # Xabarni nusxalash
+            await message.copy_to(admin_id)
+            # Info textni yuborish
+            await bot.send_message(admin_id, info_text, parse_mode="HTML", reply_markup=kb.admin_reply_keyboard(user_id))
+            success = True
+        except Exception as e:
+            print(f"❌ Admin {admin_id} ga yuborib bo'lmadi: {e}")
+            # Agar admin botni start bosmagan bo'lsa yoki bloklagan bo'lsa shu yerda xato chiqadi
+    
+    if success:
         await db.add_message(user_id, "to_admin", content_type)
         confirmation = "✅ Sizning murojaatingiz yuborildi!" if lang == 'uz' else "✅ Ваше обращение отправлено!"
         await message.answer(confirmation, reply_markup=kb.main_menu_keyboard(lang))
-    except Exception as e:
-        print(f"❌ Murojaat yuborishda XATOLIK: {e}")
-        await message.answer("❌ Xatolik yuz berdi." if lang == 'uz' else "❌ Произошла ошибка.", reply_markup=kb.main_menu_keyboard(lang))
-    finally:
-        await state.clear()
+    else:
+        await message.answer("❌ Xatolik yuz berdi. Adminlar topilmadi." if lang == 'uz' else "❌ Ошибка. Админы не найдены.", reply_markup=kb.main_menu_keyboard(lang))
+        
+    await state.clear()
 
 # ----------- Mening murojaatlarim ------------
 @router.message(F.text == "📋 Mening murojaatlarim")
@@ -315,6 +331,7 @@ async def admin_toggle_ban(callback: types.CallbackQuery):
 # --- ADMIN JAVOB BERISH ---
 @router.callback_query(F.data.startswith("reply_"))
 async def admin_reply_start(callback: types.CallbackQuery, state: FSMContext):
+    # Bu joyda IsAdmin filtri yo'q, lekin reply_ tugmasi faqat adminda chiqadi
     user_id = callback.data.split("_")[1]
     await state.update_data(target_user=int(user_id))
     await callback.message.answer("✍️ Javobingizni yozing:")
